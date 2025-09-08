@@ -10,6 +10,10 @@ import com.yupi.yuaicodemother.model.entity.User;
 import com.yupi.yuaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.yupi.yuaicodemother.service.ChatHistoryService;
 import jakarta.annotation.Resource;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -42,19 +46,38 @@ public class JsonMessageStreamHandler {
                                ChatHistoryService chatHistoryService,
                                long appId, User loginUser) {
         // 收集数据用于生成后端记忆格式
-        StringBuilder chatHistoryStringBuilder = new StringBuilder();
+        StringBuilder aiHistoryStringBuilder = new StringBuilder();
+        StringBuilder gatherHistoryStringBuilder = new StringBuilder();
+        StringBuilder toolHistoryStringBuilder = new StringBuilder();
         // 用于跟踪已经见过的工具ID，判断是否是第一次调用
         Set<String> seenToolIds = new HashSet<>();
         return originFlux
                 .map(chunk -> {
                     // 解析每个 JSON 消息块
-                    return handleJsonMessageChunk(chunk, chatHistoryStringBuilder, seenToolIds);
+                    AiResponse aiResponse = JSONUtil.toBean(handleJsonMessageChunk(chunk, seenToolIds), AiResponse.class);
+                    String content = aiResponse.content;
+                    // 收集完整信息方便前端进行显示
+                    gatherHistoryStringBuilder.append(content);
+                    // 收集数据用于生成后端记忆格式
+                    if (aiResponse.type.equals(StreamMessageTypeEnum.AI_RESPONSE.getValue())) {
+                        aiHistoryStringBuilder.append(content);
+                    } else if (aiResponse.type.equals(StreamMessageTypeEnum.TOOL_EXECUTED.getValue())) {
+                        toolHistoryStringBuilder.append(content);
+                    }
+                    return content;
                 })
-                .filter(StrUtil::isNotEmpty) // 过滤空字串
+                // 过滤空字串
+                .filter(StrUtil::isNotEmpty)
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
-                    String aiResponse = chatHistoryStringBuilder.toString();
+                    String aiResponse = aiHistoryStringBuilder.toString();
                     chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    // 添加工具调用历史到对话历史
+                    String toolHistory = toolHistoryStringBuilder.toString();
+                    chatHistoryService.addChatMessage(appId, toolHistory, ChatHistoryMessageTypeEnum.TOOL.getValue(), loginUser.getId());
+                    // 单独保存一份方便前端进行显示
+                    String gatherHistory = gatherHistoryStringBuilder.toString();
+                    chatHistoryService.addChatMessage(appId, gatherHistory, ChatHistoryMessageTypeEnum.FRONTEND.getValue(), loginUser.getId());
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
@@ -66,7 +89,7 @@ public class JsonMessageStreamHandler {
     /**
      * 解析并收集 TokenStream 数据
      */
-    private String handleJsonMessageChunk(String chunk, StringBuilder chatHistoryStringBuilder, Set<String> seenToolIds) {
+    private String handleJsonMessageChunk(String chunk, Set<String> seenToolIds) {
         // 解析 JSON
         StreamMessage streamMessage = JSONUtil.toBean(chunk, StreamMessage.class);
         StreamMessageTypeEnum typeEnum = StreamMessageTypeEnum.getEnumByValue(streamMessage.getType());
@@ -74,9 +97,7 @@ public class JsonMessageStreamHandler {
             case AI_RESPONSE -> {
                 AiResponseMessage aiMessage = JSONUtil.toBean(chunk, AiResponseMessage.class);
                 String data = aiMessage.getData();
-                // 直接拼接响应
-                chatHistoryStringBuilder.append(data);
-                return data;
+                return getAiMsgJson(data, typeEnum);
             }
             case TOOL_REQUEST -> {
                 ToolRequestMessage toolRequestMessage = JSONUtil.toBean(chunk, ToolRequestMessage.class);
@@ -89,10 +110,10 @@ public class JsonMessageStreamHandler {
                     // 根据工具名称获取工具实例
                     BaseTool tool = toolManager.getTool(toolName);
                     // 返回格式化的工具调用信息
-                    return tool.generateToolRequestResponse();
+                    return getAiMsgJson(tool.generateToolRequestResponse(), typeEnum);
                 } else {
                     // 不是第一次调用这个工具，直接返回空
-                    return "";
+                    return getAiMsgJson("", typeEnum);
                 }
             }
             case TOOL_EXECUTED -> {
@@ -104,13 +125,30 @@ public class JsonMessageStreamHandler {
                 String result = tool.generateToolExecutedResult(jsonObject);
                 // 输出前端和要持久化的内容
                 String output = String.format("\n\n%s\n\n", result);
-                chatHistoryStringBuilder.append(output);
-                return output;
+                return getAiMsgJson(output, typeEnum);
             }
             default -> {
                 log.error("不支持的消息类型: {}", typeEnum);
-                return "";
+                return getAiMsgJson("", typeEnum);
             }
         }
+    }
+
+    private String getAiMsgJson(String content, StreamMessageTypeEnum typeEnum) {
+        AiResponse aiResponse = AiResponse.builder().content(content).type(typeEnum.getValue()).build();
+        return JSONUtil.toJsonStr(aiResponse);
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AiResponse {
+        private String content;
+
+        /**
+         * @see StreamMessageTypeEnum
+         */
+        private String type;
     }
 } 
