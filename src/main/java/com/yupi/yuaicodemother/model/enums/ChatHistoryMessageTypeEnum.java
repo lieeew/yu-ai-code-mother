@@ -10,6 +10,9 @@ import lombok.Getter;
 public enum ChatHistoryMessageTypeEnum {
 
     USER("用户", "user"),
+    // 方便前端显示, 包含工具调用的流程
+    FRONTEND("前端显示", "frontend"),
+    // 不包含工具调用的流程
     AI("AI", "ai");
 
     private final String text;

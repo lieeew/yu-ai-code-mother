@@ -86,6 +86,11 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         queryRequest.setAppId(appId);
         queryRequest.setLastCreateTime(lastCreateTime);
         QueryWrapper queryWrapper = this.getQueryWrapper(queryRequest);
+        // 前端历史对话返回有 tool 记录
+        queryWrapper.in(ChatHistory::getMessageType,
+                ChatHistoryMessageTypeEnum.FRONTEND.getValue(),
+                ChatHistoryMessageTypeEnum.USER.getValue()
+        );
         // 查询数据
         return this.page(Page.of(1, pageSize), queryWrapper);
     }
@@ -95,6 +100,11 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         try {
             QueryWrapper queryWrapper = QueryWrapper.create()
                     .eq(ChatHistory::getAppId, appId)
+                    // 加载到历史对话不包含 tool 调用日志
+                    .in(ChatHistory::getMessageType,
+                            ChatHistoryMessageTypeEnum.AI,
+                            ChatHistoryMessageTypeEnum.USER
+                    )
                     .orderBy(ChatHistory::getCreateTime, false)
                     .limit(1, maxCount);
             List<ChatHistory> historyList = this.list(queryWrapper);
