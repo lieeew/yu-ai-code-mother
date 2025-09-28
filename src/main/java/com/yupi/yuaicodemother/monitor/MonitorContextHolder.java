@@ -25,6 +25,15 @@ public class MonitorContextHolder {
     }
 
     /**
+     * 获取当前监控上下文 & 清除监控上下文
+     */
+    public static MonitorContext removeAndGetContext() {
+        MonitorContext monitorContext = CONTEXT_HOLDER.get();
+        CONTEXT_HOLDER.remove();
+        return monitorContext;
+    }
+
+    /**
      * 清除监控上下文
      */
     public static void clearContext() {

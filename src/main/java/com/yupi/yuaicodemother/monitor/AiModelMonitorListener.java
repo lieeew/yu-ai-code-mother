@@ -31,7 +31,7 @@ public class AiModelMonitorListener implements ChatModelListener {
         // 获取当前时间戳，但未做任何处理
         requestContext.attributes().put(REQUEST_START_TIME_KEY, Instant.now());
         // 从监控上下文中获取信息
-        MonitorContext monitorContext = MonitorContextHolder.getContext();
+        MonitorContext monitorContext = MonitorContextHolder.removeAndGetContext();
         String userId = monitorContext.getUserId();
         String appId = monitorContext.getAppId();
         requestContext.attributes().put(MONITOR_CONTEXT_KEY, monitorContext);
@@ -57,12 +57,13 @@ public class AiModelMonitorListener implements ChatModelListener {
         recordResponseTime(attributes, userId, appId, modelName);
         // 记录 Token 使用情况
         recordTokenUsage(responseContext, userId, appId, modelName);
+        MonitorContextHolder.setContext(context);
     }
 
     @Override
     public void onError(ChatModelErrorContext errorContext) {
         // 从监控上下文中获取信息
-        MonitorContext context = MonitorContextHolder.getContext();
+        MonitorContext context = (MonitorContext) errorContext.attributes().get(MONITOR_CONTEXT_KEY);
         String userId = context.getUserId();
         String appId = context.getAppId();
         // 获取模型名称和错误类型
