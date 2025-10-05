@@ -1,6 +1,7 @@
 package com.yupi.yuaicodemother.config;
 
 import com.yupi.yuaicodemother.monitor.AiModelMonitorListener;
+import com.yupi.yuaicodemother.request.RequestMonitorListener;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import jakarta.annotation.Resource;
@@ -24,6 +25,9 @@ public class StreamingChatModelConfig {
 
     @Resource
     private AiModelMonitorListener aiModelMonitorListener;
+
+    @Resource
+    private RequestMonitorListener requestMonitorListener;
 
     private String baseUrl;
 
@@ -54,7 +58,7 @@ public class StreamingChatModelConfig {
                 .temperature(temperature)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
-                .listeners(List.of(aiModelMonitorListener))
+                .listeners(List.of(aiModelMonitorListener, requestMonitorListener))
                 .build();
     }
 }

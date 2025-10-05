@@ -1,5 +1,6 @@
 package com.yupi.yuaicodemother.config;
 
+import com.yupi.yuaicodemother.request.InterruptibleJdkHttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.Data;
@@ -39,6 +40,7 @@ public class RoutingAiModelConfig {
         return OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
+                .httpClientBuilder(InterruptibleJdkHttpClientBuilder.builder())
                 .baseUrl(baseUrl)
                 .maxTokens(maxTokens)
                 .temperature(temperature)

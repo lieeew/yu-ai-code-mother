@@ -1,5 +1,6 @@
 package dev.langchain4j.model.openai;
 
+import com.yupi.yuaicodemother.request.InterruptibleJdkHttpClientBuilder;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.internal.ExceptionMapper;
@@ -47,6 +48,7 @@ public class OpenAiStreamingChatModel implements StreamingChatModel {
                 .httpClientBuilder(builder.httpClientBuilder)
                 .baseUrl(getOrDefault(builder.baseUrl, DEFAULT_OPENAI_URL))
                 .apiKey(builder.apiKey)
+                .httpClientBuilder(InterruptibleJdkHttpClientBuilder.builder())
                 .organizationId(builder.organizationId)
                 .projectId(builder.projectId)
                 .connectTimeout(getOrDefault(builder.timeout, ofSeconds(15)))

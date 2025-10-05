@@ -10,17 +10,20 @@ import com.yupi.yuaicodemother.common.BaseResponse;
 import com.yupi.yuaicodemother.common.DeleteRequest;
 import com.yupi.yuaicodemother.common.ResultUtils;
 import com.yupi.yuaicodemother.constant.AppConstant;
+import com.yupi.yuaicodemother.constant.RequestConstant;
 import com.yupi.yuaicodemother.constant.UserConstant;
 import com.yupi.yuaicodemother.exception.BusinessException;
 import com.yupi.yuaicodemother.exception.ErrorCode;
 import com.yupi.yuaicodemother.exception.ThrowUtils;
 import com.yupi.yuaicodemother.model.dto.app.*;
+import com.yupi.yuaicodemother.model.entity.App;
 import com.yupi.yuaicodemother.model.entity.User;
 import com.yupi.yuaicodemother.model.vo.AppVO;
-import com.yupi.yuaicodemother.ratelimter.annotation.RateLimit;
-import com.yupi.yuaicodemother.ratelimter.enums.RateLimitType;
+import com.yupi.yuaicodemother.request.InterruptibleJdkHttpClient;
+import com.yupi.yuaicodemother.service.AppService;
 import com.yupi.yuaicodemother.service.ProjectDownloadService;
 import com.yupi.yuaicodemother.service.UserService;
+import com.yupi.yuaicodemother.utils.ThreadLocalUtil;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,15 +31,15 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
-import com.yupi.yuaicodemother.model.entity.App;
-import com.yupi.yuaicodemother.service.AppService;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 应用 控制层。
@@ -56,8 +59,19 @@ public class AppController {
     @Resource
     private ProjectDownloadService projectDownloadService;
 
+    // 保存用户对应的 stop sink
+    private final Map<Long, Sinks.Many<String>> stopSinks = new ConcurrentHashMap<>();
+
+    @PostMapping("/stop")
+    public void stopSse(@RequestParam Long appId) {
+        InterruptibleJdkHttpClient.INTERCEPTOR_IDS.put(appId.toString(), (byte) 1);
+        Sinks.Many<String> sink = stopSinks.get(appId);
+        if (sink != null) {
+            sink.tryEmitNext("stop");
+        }
+    }
+
     @GetMapping(value = "/chat/gen/code", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @RateLimit(limitType = RateLimitType.USER, rate = 5, rateInterval = 60, message = "AI 对话请求过于频繁，请稍后再试")
     public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId,
                                                        @RequestParam String message,
                                                        HttpServletRequest request) {
@@ -66,9 +80,15 @@ public class AppController {
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "提示词不能为空");
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
+        // 设置 ThreadLocal 参数
+        ThreadLocalUtil.set(RequestConstant.LOCAL_THREAD_APP_ID, appId.toString());
         // 调用服务生成代码（SSE 流式返回）
         Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser);
+        // 创建一个停止信号
+        Sinks.Many<String> stopSink = Sinks.many().multicast().onBackpressureBuffer();
+        stopSinks.put(appId, stopSink);
         return contentFlux
+                .takeUntilOther(stopSink.asFlux())
                 .map(chunk -> {
                     Map<String, String> wrapper = Map.of("d", chunk);
                     String jsonData = JSONUtil.toJsonStr(wrapper);
@@ -82,7 +102,7 @@ public class AppController {
                                 .event("done")
                                 .data("")
                                 .build()
-                ));
+                )).doFinally(signalType -> stopSinks.remove(appId));
     }
 
     /**
