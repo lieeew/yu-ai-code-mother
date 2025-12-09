@@ -39,6 +39,7 @@ public class RedissonConfig {
                 .setRetryInterval(1500);
         // 如果有密码则设置密码
         if (redisPassword != null && !redisPassword.isEmpty()) {
+            singleServerConfig.setUsername("default");
             singleServerConfig.setPassword(redisPassword);
         }
         return Redisson.create(config);
